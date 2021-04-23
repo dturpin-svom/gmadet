@@ -4,7 +4,6 @@
 """
 Scripts to perform crossmatch with astronomical catalogs
 and with solar moving objects.
-
 """
 import os
 import numpy as np
@@ -30,7 +29,6 @@ def _run_xmatch(coordinates, catalog, radius):
                 catalog: Vizier identifier of the catalog
                 radius in arcsecond
     returns: astropy.table object
-
     Vizier catalog identifiers:
     Gaia DR2: I/345/gaia2
     SDSS DR12: V/147/sdss12
@@ -57,7 +55,7 @@ def run_xmatch(coordinates, catalog, radius, nb_threads):
     """Run xmatch in parallel"""
 
     catalog_list = []
-    cand_ID_stop = []
+    idx_stop = []
     Ncat = len(coordinates)
     # Check if there less data than number of threads.
     if Ncat < nb_threads:
@@ -68,14 +66,14 @@ def run_xmatch(coordinates, catalog, radius, nb_threads):
     for i in range(nb_threads):
         if i == 0:
             catalog_list.append(coordinates[i * Ncut : (i + 1) * Ncut])
-            cand_ID_stop.append((i + 1) * Ncut)
+            idx_stop.append((i + 1) * Ncut)
         elif i > 0 and i < nb_threads - 1:
             catalog_list.append(coordinates[i * Ncut : (i + 1) * Ncut])
-            cand_ID_stop.append((i + 1) * Ncut)
+            idx_stop.append((i + 1) * Ncut)
         elif i == nb_threads - 1:
             catalog_list.append(coordinates[i * Ncut : Ncat])
-            cand_ID_stop.append(Ncat)
-        if cand_ID_stop[-1] >= Ncat:
+            idx_stop.append(Ncat)
+        if idx_stop[-1] >= Ncat:
             break
     pool = mp.Pool(nb_threads)
     # call apply_async() without callback
@@ -91,16 +89,16 @@ def run_xmatch(coordinates, catalog, radius, nb_threads):
     pool.close()
     pool.join()
 
-    #  If one table is empty and one returns something,
-    #  there will be a conflict type, str vs something.
-    #  So keep only the one with data
+    #  If one table is empty and one returns something,
+    #  there will be a conflict type, str vs something.
+    #  So keep only the one with data
     res2keep = []
     c = 0
     for i in range(len(results)):
         if len(results[i]) > 0:
             res2keep.append(results[i])
             c += 1
-    #  If all are empty select the first not to crash the code
+    #  If all are empty select the first not to crash the code
     if c == 0:
         res2keep.append(results[0])
 
@@ -149,7 +147,7 @@ def catalogs(
             folder = path + "/"
         else:
             folder = ""
-        #  Get rid of the extension to keep only the name
+        #  Get rid of the extension to keep only the name
         filename2, extension = os.path.splitext(filename_ext)
 
         magfilewcs = folder + filename2 + ".magwcs"
@@ -166,9 +164,9 @@ def catalogs(
             quadrant = split_file[1].split("_")[0]
             """
             if len(split_file[-1]) == 2:
-                cand_ID = 3
+                idx = 3
             elif len(split_file[-1]) == 3:
-                cand_ID = 4
+                idx = 4
             """
         _filename_list.append(original_name + ".oc")
 
@@ -213,7 +211,7 @@ def catalogs(
             # Do not need it as the astrometric calibration
             # is performed on each quadrant now.
             """
-            # Transform X_pos and Y_pos to original image in case it was split
+            # Transform X_pos and Y_pos to original image in case it was split
             header2 = fits.getheader(filename)
             Naxis1 = float(header2['NAXIS1'])
             Naxis2 = float(header2['NAXIS2'])
@@ -240,21 +238,21 @@ def catalogs(
     detected_sources_tot["_RAJ2000"] *= u.deg
     detected_sources_tot["_DEJ2000"] *= u.deg
     # Add index for each source
-    detected_sources_tot["cand_ID"] = np.arange(len(detected_sources_tot))
-    #  Add a flag to indicate whether a source is crossmatched with
-    #  a referenced source
+    detected_sources_tot["idx"] = np.arange(len(detected_sources_tot))
+    #  Add a flag to indicate whether a source is crossmatched with
+    #  a referenced source
     detected_sources_tot["Match"] = ["N"] * len(detected_sources_tot)
 
-    #  Initialise candidates with all detected sources
+    #  Initialise candidates with all detected sources
     # candidates = deepcopy(detected_sources_tot)
-    #  Only consider sources in substracted images if substraction was performed:
+    #  Only consider sources in substracted images if substraction was performed:
     if subFiles is not None:
         mask_sub = detected_sources_tot["FlagSub"] == "Y"
     else:
         mask_sub = np.ones(len(detected_sources_tot), dtype=bool)
 
     candidates = deepcopy(
-        detected_sources_tot["_RAJ2000", "_DEJ2000", "cand_ID", "Match", "FlagSub"][
+        detected_sources_tot["_RAJ2000", "_DEJ2000", "idx", "Match", "FlagSub"][
             mask_sub
         ]
     )
@@ -276,16 +274,16 @@ def catalogs(
 
         # crossmatch.write('test.dat', format='ascii.commented_header', overwrite=True)
         # Do not consider duplicates
-        #  Meaning that if there are several sources
-        #  we consider it as a crossmatch
-        _, referenced_star_cand_ID = np.unique(crossmatch["cand_ID"], return_index=True)
-        # First keep only the first occurence to a given cand_ID.
-        crossmatch = crossmatch[referenced_star_cand_ID]
-        cand_ID_match = np.isin(candidates["cand_ID"], crossmatch["cand_ID"])
+        #  Meaning that if there are several sources
+        #  we consider it as a crossmatch
+        _, referenced_star_idx = np.unique(crossmatch["idx"], return_index=True)
+        # First keep only the first occurence to a given idx.
+        crossmatch = crossmatch[referenced_star_idx]
+        idx_match = np.isin(candidates["idx"], crossmatch["idx"])
         # Then apply it the candidates table to flag referenced sources.
-        candidates["Match"][cand_ID_match] = "Y"
+        candidates["Match"][idx_match] = "Y"
 
-        #  Update Match mask
+        #  Update Match mask
         mask_matched = candidates["Match"] == "N"
 
         if subFiles is not None:
@@ -303,18 +301,18 @@ def catalogs(
         if len(candidates[mask_matched]) == 0:
             break
 
-    #  Flag sources without any match in catalogs
-    cand_ID_no_match = np.isin(detected_sources_tot["cand_ID"], candidates["cand_ID"][mask_matched])
-    # candidates = deepcopy(detected_sources_tot[keep_cand_ID])
-    #  Add the Match flag in original table data
-    detected_sources_tot["Match"][~cand_ID_no_match] = "Y"
+    #  Flag sources without any match in catalogs
+    idx_no_match = np.isin(detected_sources_tot["idx"], candidates["idx"][mask_matched])
+    # candidates = deepcopy(detected_sources_tot[keep_idx])
+    #  Add the Match flag in original table data
+    detected_sources_tot["Match"][~idx_no_match] = "Y"
 
-    #  Get filename
+    #  Get filename
     _filename = np.unique(_filename_list)[0]
     # Write candidates file.
     # If substraction was performed, split transients into specific files
     if subFiles is not None:
-        mask = (detected_sources_tot["FlagSub"] == "Y") & cand_ID_no_match
+        mask = (detected_sources_tot["FlagSub"] == "Y") & idx_no_match
         detected_sources_tot[mask].write(
             os.path.splitext(_filename)[0] + "_sub.oc",
             format="ascii.commented_header",
@@ -328,7 +326,7 @@ def catalogs(
         )
 
     else:
-        mask = cand_ID_no_match
+        mask = idx_no_match
         detected_sources_tot[mask].write(
             _filename, format="ascii.commented_header", overwrite=True
         )
@@ -339,8 +337,8 @@ def catalogs(
             overwrite=True,
         )
 
-    #  Also write a file with all the sources detected
-    #   Use original input name (i.e. remove the _reg suffix.
+    #  Also write a file with all the sources detected
+    #   Use original input name (i.e. remove the _reg suffix.
     detected_sources_tot.write(
         _filename.split("_reg_")[0] + ".alldetections",
         format="ascii.commented_header",
@@ -379,14 +377,14 @@ def skybot(ra_deg, dec_deg, date, radius, Texp, position_error=120):
         moving_objects_list = None
 
     if moving_objects_list is not None:
-        #  Add RA, DEC at end of exposure
+        #  Add RA, DEC at end of exposure
         moving_objects_list["RA_Tend"] = (
             moving_objects_list["RA"] + moving_objects_list["RA_rate"] * Texp
         )
         moving_objects_list["DEC_Tend"] = (
             moving_objects_list["DEC"] + moving_objects_list["DEC_rate"] * Texp
         )
-        #  Compute angular distance  between Tstart and Tend
+        #  Compute angular distance  between Tstart and Tend
         c1 = SkyCoord(
             moving_objects_list["RA"], moving_objects_list["DEC"], frame="icrs"
         )
@@ -405,7 +403,6 @@ def crossmatch_skybot(sources, moving_objects, radius=10):
     """
     crossmatch list of detected sources with list of moving objects
     in this field using skybot
-
     parameters: sources, moving_objects, radius:
                 sources: astropy.table containing list of unknown
                          sources detected
@@ -413,7 +410,6 @@ def crossmatch_skybot(sources, moving_objects, radius=10):
                                 objects from skybot in the same field of view
                 radius in arcsecond
     returns: astropy.table object
-
     NOT WORKING WITH PYTHON2.7, seems ok WITH PYTHON3
     """
     cat1 = np.empty((len(sources), 2), dtype=np.float64)
@@ -426,7 +422,7 @@ def crossmatch_skybot(sources, moving_objects, radius=10):
     dist, ind = crossmatch_angular(cat1, cat2, radius / 3600)
     match = ~np.isinf(dist)
     dist_match = dist[match]
-    #  Convert in arcseconds
+    #  Convert in arcseconds
     dist_match *= 3600
     if len(dist_match) > 0:
         mov_match = moving_objects[ind[match]]
